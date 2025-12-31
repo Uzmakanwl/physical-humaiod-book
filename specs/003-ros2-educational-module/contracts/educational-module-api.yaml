@@ -1,0 +1,167 @@
+# Educational Module API Contract
+# For ROS 2 Educational Module System
+
+openapi: 3.0.0
+info:
+  title: ROS 2 Educational Module API
+  description: API for educational content management and student progress tracking
+  version: 1.0.0
+
+paths:
+  /modules:
+    get:
+      summary: List all available modules
+      responses:
+        '200':
+          description: List of available modules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Module'
+
+  /modules/{moduleId}:
+    get:
+      summary: Get module details
+      parameters:
+        - name: moduleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Module details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Module'
+
+  /modules/{moduleId}/chapters:
+    get:
+      summary: Get all chapters in a module
+      parameters:
+        - name: moduleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of chapters in the module
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Chapter'
+
+  /chapters/{chapterId}:
+    get:
+      summary: Get chapter content
+      parameters:
+        - name: chapterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chapter content and metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Chapter'
+
+  /chapters/{chapterId}/examples:
+    get:
+      summary: Get code examples for a chapter
+      parameters:
+        - name: chapterId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of code examples for the chapter
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CodeExample'
+
+components:
+  schemas:
+    Module:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        slug:
+          type: string
+        difficulty:
+          type: string
+          enum: [beginner, intermediate, advanced]
+        estimatedDuration:
+          type: number
+        targetAudience:
+          type: array
+          items:
+            type: string
+        chapters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Chapter'
+
+    Chapter:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        content:
+          type: string
+        objectives:
+          type: array
+          items:
+            type: string
+        prerequisites:
+          type: array
+          items:
+            type: string
+        duration:
+          type: number
+        examples:
+          type: array
+          items:
+            $ref: '#/components/schemas/CodeExample'
+
+    CodeExample:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        language:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        usage:
+          type: string
+        relatedConcepts:
+          type: array
+          items:
+            type: string

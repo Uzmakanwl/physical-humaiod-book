@@ -1,0 +1,453 @@
+"""
+Vector storage module for the embedding pipeline.
+
+This module handles storage and retrieval of embeddings in Qdrant vector database,
+including metadata linking to source URLs and similarity search functionality.
+"""
+
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from typing import List, Dict, Any, Optional, Tuple
+import uuid
+from config import Config
+from src.logger import get_logger
+
+
+class VectorStorage:
+    """Manages storage and retrieval of embeddings in Qdrant vector database."""
+
+    def __init__(self, collection_name: Optional[str] = None):
+        """
+        Initialize the VectorStorage.
+
+        Args:
+            collection_name: Name of the Qdrant collection to use
+        """
+        self.collection_name = collection_name or Config.COLLECTION_NAME
+        self.logger = get_logger(__name__)
+
+        # Initialize Qdrant client
+        self.client = QdrantClient(
+            host=Config.QDRANT_HOST,
+            port=Config.QDRANT_PORT,
+            api_key=Config.QDRANT_API_KEY
+        )
+
+        # Create collection if it doesn't exist
+        self._create_collection_if_not_exists()
+
+        # Thread safety for concurrent operations
+        import threading
+        self._operation_lock = threading.Lock()
+
+        # Performance optimization: connection pooling and caching
+        self._point_cache = {}  # Simple cache for frequently accessed points
+        self._cache_size_limit = 1000
+
+    def _create_collection_if_not_exists(self):
+        """Create the collection if it doesn't exist."""
+        try:
+            # Try to get collection info
+            self.client.get_collection(self.collection_name)
+            self.logger.info(f"Collection '{self.collection_name}' already exists")
+        except Exception:
+            # Collection doesn't exist, create it
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=models.VectorParams(
+                    size=1024,  # Default size for Cohere embeddings
+                    distance=models.Distance.COSINE
+                )
+            )
+            self.logger.info(f"Created collection '{self.collection_name}'")
+
+    def store_embedding(self, embedding: List[float], metadata: Dict[str, Any],
+                      text_content: Optional[str] = None) -> str:
+        """
+        Store a single embedding with metadata.
+
+        Args:
+            embedding: The embedding vector to store
+            metadata: Metadata to associate with the embedding
+            text_content: Optional original text content
+
+        Returns:
+            ID of the stored embedding
+        """
+        point_id = str(uuid.uuid4())
+
+        # Prepare payload with metadata
+        payload = metadata.copy()
+        if text_content:
+            payload['text_content'] = text_content
+
+        try:
+            with self._operation_lock:
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=[
+                        models.PointStruct(
+                            id=point_id,
+                            vector=embedding,
+                            payload=payload
+                        )
+                    ]
+                )
+            self.logger.info(f"Stored embedding with ID: {point_id}")
+            return point_id
+        except Exception as e:
+            self.logger.error(f"Error storing embedding: {str(e)}")
+            raise
+
+    def store_embeddings(self, embeddings: List[List[float]],
+                       metadata_list: List[Dict[str, Any]],
+                       text_contents: Optional[List[str]] = None) -> List[str]:
+        """
+        Store multiple embeddings with metadata.
+
+        Args:
+            embeddings: List of embedding vectors to store
+            metadata_list: List of metadata dictionaries
+            text_contents: Optional list of original text contents
+
+        Returns:
+            List of IDs of the stored embeddings
+        """
+        if len(embeddings) != len(metadata_list):
+            raise ValueError("Number of embeddings must match number of metadata entries")
+
+        point_ids = []
+        points = []
+
+        for i, (embedding, metadata) in enumerate(zip(embeddings, metadata_list)):
+            point_id = str(uuid.uuid4())
+            point_ids.append(point_id)
+
+            # Prepare payload with metadata
+            payload = metadata.copy()
+            if text_contents and i < len(text_contents):
+                payload['text_content'] = text_contents[i]
+
+            points.append(
+                models.PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload=payload
+                )
+            )
+
+        try:
+            with self._operation_lock:
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=points
+                )
+            self.logger.info(f"Stored {len(points)} embeddings")
+            return point_ids
+        except Exception as e:
+            self.logger.error(f"Error storing embeddings: {str(e)}")
+            raise
+
+    def search_similar(self, query_embedding: List[float],
+                     limit: int = 10,
+                     metadata_filter: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """
+        Search for similar embeddings to the query embedding.
+
+        Args:
+            query_embedding: The embedding to search for similar items
+            limit: Maximum number of results to return
+            metadata_filter: Optional filter for metadata fields
+
+        Returns:
+            List of similar items with their metadata and similarity scores
+        """
+        try:
+            # Prepare filter if provided
+            qdrant_filter = None
+            if metadata_filter:
+                qdrant_filter = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key=key,
+                            match=models.MatchValue(value=value)
+                        )
+                        for key, value in metadata_filter.items()
+                    ]
+                )
+
+            with self._operation_lock:
+                results = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=limit,
+                    query_filter=qdrant_filter,
+                    with_payload=True
+                )
+
+            # Format results
+            formatted_results = []
+            for result in results:
+                formatted_results.append({
+                    'id': result.id,
+                    'score': result.score,
+                    'payload': result.payload,
+                    'vector': result.vector
+                })
+
+            self.logger.info(f"Found {len(formatted_results)} similar items")
+            return formatted_results
+
+        except Exception as e:
+            self.logger.error(f"Error searching for similar embeddings: {str(e)}")
+            raise
+
+    def get_embedding_by_id(self, embedding_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve an embedding by its ID.
+
+        Args:
+            embedding_id: ID of the embedding to retrieve
+
+        Returns:
+            Dictionary containing the embedding and metadata, or None if not found
+        """
+        # Check cache first
+        if embedding_id in self._point_cache:
+            self.logger.debug(f"Retrieved embedding {embedding_id} from cache")
+ 
+ 
+            return self._point_cache[embedding_id]
+
+        try:
+            with self._operation_lock:
+                records = self.client.retrieve(
+                    collection_name=self.collection_name,
+                    ids=[embedding_id],
+                    with_vectors=True
+                )
+
+            if not records:
+                return None
+
+            record = records[0]
+            result = {
+                'id': record.id,
+                'vector': record.vector,
+                'payload': record.payload
+            }
+
+            # Add to cache if we're under the size limit
+            if len(self._point_cache) < self._cache_size_limit:
+                self._point_cache[embedding_id] = result
+
+            return result
+        except Exception as e:
+            self.logger.error(f"Error retrieving embedding {embedding_id}: {str(e)}")
+            return None
+
+    def _clear_cache(self):
+        """Clear the internal cache."""
+        self._point_cache.clear()
+
+    def delete_embedding(self, embedding_id: str) -> bool:
+        """
+        Delete an embedding by its ID.
+
+        Args:
+            embedding_id: ID of the embedding to delete
+
+        Returns:
+            True if deletion was successful, False otherwise
+        """
+        try:
+            with self._operation_lock:
+                self.client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=models.PointIdsList(
+                        points=[embedding_id]
+                    )
+                )
+            # Remove from cache if present
+            if embedding_id in self._point_cache:
+                del self._point_cache[embedding_id]
+            self.logger.info(f"Deleted embedding with ID: {embedding_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error deleting embedding {embedding_id}: {str(e)}")
+            return False
+
+    def get_collection_info(self) -> Dict[str, Any]:
+        """
+        Get information about the collection.
+
+        Returns:
+            Dictionary with collection information
+        """
+        try:
+            with self._operation_lock:
+                collection_info = self.client.get_collection(self.collection_name)
+            return {
+                'name': self.collection_name,
+                'vector_size': collection_info.config.params.vectors.size,
+                'distance': collection_info.config.params.vectors.distance,
+                'point_count': collection_info.points_count
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting collection info: {str(e)}")
+            return {}
+
+    def clear_collection(self) -> bool:
+        """
+        Clear all embeddings from the collection.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self._operation_lock:
+                # Get all point IDs
+                all_points = self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=10000  # Adjust based on expected collection size
+                )[0]
+
+                point_ids = [point.id for point in all_points]
+
+                if point_ids:
+                    self.client.delete(
+                        collection_name=self.collection_name,
+                        points_selector=models.PointIdsList(
+                            points=point_ids
+                        )
+                    )
+                    self.logger.info(f"Cleared {len(point_ids)} embeddings from collection")
+
+            return True
+        except Exception as e:
+            self.logger.error(f"Error clearing collection: {str(e)}")
+            return False
+
+    def update_embedding_metadata(self, embedding_id: str, metadata: Dict[str, Any]) -> bool:
+        """
+        Update metadata for an existing embedding.
+
+        Args:
+            embedding_id: ID of the embedding to update
+            metadata: New metadata to set
+
+        Returns:
+            True if update was successful, False otherwise
+        """
+        try:
+            with self._operation_lock:
+                self.client.set_payload(
+                    collection_name=self.collection_name,
+                    payload=metadata,
+                    points_selector=models.PointIdsList(
+                        points=[embedding_id]
+                    )
+                )
+            # Remove from cache to force refresh on next access
+            if embedding_id in self._point_cache:
+                del self._point_cache[embedding_id]
+            self.logger.info(f"Updated metadata for embedding {embedding_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error updating metadata for embedding {embedding_id}: {str(e)}")
+            return False
+
+    def backup_collection(self, backup_path: str) -> bool:
+        """
+        Backup the entire collection to a file.
+
+        Args:
+            backup_path: Path to save the backup
+
+        Returns:
+            True if backup was successful, False otherwise
+        """
+        import json
+        try:
+            # Get all points in the collection
+            all_points = []
+            offset = None
+            while True:
+                with self._operation_lock:
+                    records, next_offset = self.client.scroll(
+                        collection_name=self.collection_name,
+                        limit=1000,
+                        offset=offset,
+                        with_vectors=True
+                    )
+
+                if not records:
+                    break
+
+                for record in records:
+                    point_data = {
+                        'id': record.id,
+                        'vector': record.vector,
+                        'payload': record.payload
+                    }
+                    all_points.append(point_data)
+
+                if next_offset is None:
+                    break
+                offset = next_offset
+
+            # Save to file
+            with open(backup_path, 'w', encoding='utf-8') as f:
+                json.dump(all_points, f)
+
+            self.logger.info(f"Backup completed: {len(all_points)} points saved to {backup_path}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error during backup: {str(e)}")
+            return False
+
+    def restore_collection(self, backup_path: str) -> bool:
+        """
+        Restore the collection from a backup file.
+
+        Args:
+            backup_path: Path to the backup file
+
+        Returns:
+            True if restore was successful, False otherwise
+        """
+        import json
+        try:
+            # Read backup file
+            with open(backup_path, 'r', encoding='utf-8') as f:
+                points_data = json.load(f)
+
+            # Clear existing collection
+            self.clear_collection()
+
+            # Restore points in batches
+            from qdrant_client.http import models
+            batch_size = 100
+            for i in range(0, len(points_data), batch_size):
+                batch = points_data[i:i + batch_size]
+                points = []
+                for point_data in batch:
+                    points.append(
+                        models.PointStruct(
+                            id=point_data['id'],
+                            vector=point_data['vector'],
+                            payload=point_data['payload']
+                        )
+                    )
+
+                with self._operation_lock:
+                    self.client.upsert(
+                        collection_name=self.collection_name,
+                        points=points
+                    )
+
+            self.logger.info(f"Restore completed: {len(points_data)} points restored from {backup_path}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error during restore: {str(e)}")
+            return False

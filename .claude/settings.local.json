@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-docusaurus@latest frontend-book classic --typescript)",
+      "Bash(npm start)"
+    ]
+  }
+}
