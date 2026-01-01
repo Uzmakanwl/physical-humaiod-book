@@ -9,14 +9,14 @@ const config = {
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://muxammilkhan.github.io', // Replace with your project's URL
+  url: 'https://Uzmakanwl.github.io', // Replace with your project's URL
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub Pages, this is usually '/<project-name>/'
   baseUrl: '/frontend-book/',
 
   // GitHub pages deployment config.
-  organizationName: 'muxammilkhan', // Usually your GitHub org/user name.
-  projectName: 'frontend-book', // Usually your repo name.
+  organizationName: 'Uzmakanwl', // Usually your GitHub org/user name.
+  projectName: 'physical-humaiod-book', // Usually your repo name.
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
@@ -39,7 +39,7 @@ const config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/muxammilkhan/frontend-book/tree/main/',
+            'https://github.com/Uzmakanwl/physical-humaiod-book/tree/main/',
         },
         blog: false, // Disable blog for educational module
         theme: {
@@ -68,7 +68,7 @@ const config = {
             label: 'Module 1',
           },
           {
-            href: 'https://github.com/muxammilkhan/frontend-book',
+            href: 'https://github.com/Uzmakanwl/physical-humaiod-book',
             label: 'GitHub',
             position: 'right',
           },
@@ -104,7 +104,7 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/muxammilkhan/frontend-book',
+                href: 'https://github.com/Uzmakanwl/physical-humaiod-book',
               },
             ],
           },

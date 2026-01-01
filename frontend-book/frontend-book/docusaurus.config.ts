@@ -15,10 +15,14 @@ const config: Config = {
 
   // GitHub pages deployment config.
   organizationName: 'Uzmakanwl', // Usually your GitHub org/user name.
-  projectName: 'frontend-book', // Usually your repo name.
+  projectName: 'physical-humaiod-book', // Usually your repo name.
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    format: 'mdx',
+    mermaid: false,
+  },
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -38,7 +42,7 @@ const config: Config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/Uzmakanwl/frontend-book/tree/main/',
+            'https://github.com/Uzmakanwl/physical-humaiod-book/tree/main/',
         },
         blog: false, // Disable blog for educational module
         theme: {
@@ -67,7 +71,7 @@ const config: Config = {
             label: 'Module 1',
           },
           {
-            href: 'https://github.com/Uzmakanwl/frontend-book',
+            href: 'https://github.com/Uzmakanwl/physical-humaiod-book',
             label: 'GitHub',
             position: 'right',
           },
@@ -111,7 +115,7 @@ const config: Config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/Uzmakanwl/frontend-book',
+                href: 'https://github.com/Uzmakanwl/physical-humaiod-book',
               },
             ],
           },

@@ -44,7 +44,13 @@ export QDRANT_HOST="localhost"  # Optional, defaults to localhost
 export QDRANT_PORT="6333"      # Optional, defaults to 6333
 export QDRANT_API_KEY="your-qdrant-api-key"  # Optional, for cloud instances
 export QDRANT_URL="your-qdrant-cloud-url"    # Optional, for cloud instances
-```
+
+## Deployment
+
+To deploy the frontend documentation site on Vercel:
+1. Push your code to the GitHub repository: https://github.com/Uzmakanwl/physical-humaiod-book
+2. Connect your Vercel account to your GitHub repository
+3. Configure the build settings to use the frontend-book/frontend-book directory
 
 ## Usage
 
